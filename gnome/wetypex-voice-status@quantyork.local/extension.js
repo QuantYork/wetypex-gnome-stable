@@ -24,7 +24,7 @@ export default class VoiceStatusExtension extends Extension {
         this._box.add_child(this._icon);
         this._box.add_child(this._label);
         this._indicator.add_child(this._box);
-        Main.panel.addToStatusArea(this.uuid, this._indicator, 0, 'right');
+        Main.panel.addToStatusArea(this.uuid, this._indicator, Main.panel._leftBox.get_n_children(), 'left');
         this._indicator.hide();
         this._poll();
         this._timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 250, () => {
@@ -34,19 +34,15 @@ export default class VoiceStatusExtension extends Extension {
     }
 
     _position() {
-        // Kimpanel is the active input UI here; native GNOME keyboard is a fallback.
-        const anchor = Main.panel.statusArea.kimpanel ?? Main.panel.statusArea.keyboard;
+        // Append to the left group, so status text grows into its empty right side.
+        // Never allocate space inside the system indicators on the right.
+        const parent = Main.panel._leftBox;
         const item = this._indicator.container;
-        const sibling = anchor?.container;
-        const parent = sibling?.get_parent();
-        if (!parent || item.get_parent() !== parent)
+        if (item.get_parent() !== parent)
             return;
-        const children = parent.get_children();
-        const current = children.indexOf(item);
-        const target = children.indexOf(sibling);
-        if (current < 0 || target < 0 || current === target - 1)
-            return;
-        parent.set_child_at_index(item, current < target ? target - 1 : target);
+        const last = parent.get_n_children() - 1;
+        if (parent.get_children()[last] !== item)
+            parent.set_child_at_index(item, last);
     }
 
     _poll() {
