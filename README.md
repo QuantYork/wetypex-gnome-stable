@@ -69,6 +69,7 @@ python3 scripts/install.py --no-start
 
 - `~/.local/lib/wetypex-gnome-stable/`：两个适配库、版本文件、后端包装和卸载器。
 - `~/.local/bin/wetypex-gnome-stable`：固定启动入口。
+- `~/.local/share/applications/org.fcitx.Fcitx5.desktop`：让应用列表中的 Fcitx 5 图标重新启动同一持久服务。
 - `~/.config/systemd/user/wetypex-gnome-stable.service`：图形会话服务。
 - `~/.config/autostart/org.fcitx.Fcitx5.desktop`：隐藏重复的普通 Fcitx XDG 自启动入口。
 - `~/.local/state/wetypex-gnome-stable/`：安装清单及所管理文件的原始备份。

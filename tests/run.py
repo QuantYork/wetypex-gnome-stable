@@ -47,10 +47,13 @@ def main():
         existing.write_bytes(original)
         run(['python3', ROOT / 'scripts/install.py', '--stage-home', home])
         assert (home / '.local/bin/wetypex-gnome-stable').is_file()
+        desktop = home / '.local/share/applications/org.fcitx.Fcitx5.desktop'
+        assert 'Exec=/usr/bin/systemctl --user restart wetypex-gnome-stable.service' in desktop.read_text()
         assert b'Hidden=true' in existing.read_bytes()
         run(['python3', ROOT / 'scripts/uninstall.py', '--stage-home', home])
         assert existing.read_bytes() == original
         assert not (home / '.local/bin/wetypex-gnome-stable').exists()
+        assert not desktop.exists()
         print('PASS: staged installation, user-file backup, uninstall and restore')
     if args.x11:
         run(['cc', '-Wall', '-Wextra', '-Werror', ROOT / 'tests/test-window-anchor.c', '-lxcb', '-o', out / 'test-window-anchor'])

@@ -80,8 +80,24 @@ RestartSec=3
 [Install]
 WantedBy=graphical-session.target
 '''
+    desktop_source = pathlib.Path('/usr/share/applications/org.fcitx.Fcitx5.desktop')
+    if desktop_source.is_file():
+        desktop = desktop_source.read_text()
+        lines = desktop.splitlines()
+        in_main = False
+        replaced = False
+        for i, line in enumerate(lines):
+            if line.startswith('['): in_main = line == '[Desktop Entry]'
+            if in_main and line.startswith('Exec='):
+                lines[i] = 'Exec=/usr/bin/systemctl --user restart ' + UNIT
+                replaced = True
+        if not replaced: raise SystemExit('Cannot locate Fcitx desktop launch command.')
+        desktop = '\n'.join(lines) + '\n'
+    else:
+        desktop = '[Desktop Entry]\nType=Application\nName=Fcitx 5\nIcon=fcitx\nTerminal=false\nExec=/usr/bin/systemctl --user restart ' + UNIT + '\n'
     files = {
         launcher: ((ROOT / 'scripts/wetypex-gnome-stable').read_bytes(), 0o755),
+        '.local/share/applications/org.fcitx.Fcitx5.desktop': (desktop.encode(), 0o644),
         unit_rel: (service.encode(), 0o644),
         override: (b'[Desktop Entry]\nType=Application\nName=Fcitx 5 (managed by wetypex-gnome-stable)\nHidden=true\n', 0o644),
     }
@@ -101,7 +117,7 @@ WantedBy=graphical-session.target
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, dest)
         entries.append({'path': rel, 'existed': prior, 'sha256': hashlib.sha256(data).hexdigest()})
-    manifest = {'version': '0.1.0', 'home': str(home), 'backup': str(backup), 'files': entries, 'staged': stage}
+    manifest = {'version': '0.1.1', 'home': str(home), 'backup': str(backup), 'files': entries, 'staged': stage}
     # Persist recovery metadata before mutations, so a partial install can be undone.
     atomic_write(manifest_path, json.dumps(manifest, indent=2).encode() + b'\n', 0o600)
     for rel, (data, mode) in files.items():
