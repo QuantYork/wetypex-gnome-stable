@@ -120,6 +120,17 @@ WETYPE_BACKEND_LAUNCHER="$HOME/.local/lib/wetypex-gnome-stable/backend-json-comp
 
 升级本项目目前采用“卸载 → 构建新版 → 重新安装”，旧备份保留。Fcitx 升级到其他版本时启动器会跳过两个版本固定的定位库，启动普通 Fcitx + 后端包装，并在服务日志提示；固定起点效果此时不保证，需要重新适配和验证，不能直接删掉版本检查。
 
+## 早期测试入口
+
+如果之前使用过 `WeTypeX（固定候选位置）` 图标或 `~/.local/bin/fcitx5-wetypex-fixed`，它可能启动旧适配层并替换正在运行的稳定服务，造成候选框位置或样式变化。已安装本项目后可统一已知旧入口：
+
+```sh
+python3 scripts/redirect-legacy-launcher.py
+systemctl --user restart wetypex-gnome-stable.service
+```
+
+脚本仅接受已知早期布局，备份原文件并纳入原安装清单，卸载时可恢复；未知启动器拒绝覆盖。普通 Fcitx 5 图标和这个旧图标随后均启动同一服务。启动入口恢复不保证所有应用使用相同预编辑样式，需在原输入框复测。
+
 ## 全局编辑快捷键
 
 本机另有 keyd 提供 Win / Command + A/C/V/X/Z。它与输入法框架独立，原 Ctrl 快捷键保留，配置、追加脚本及恢复方法见 [全局快捷键](docs/global-shortcuts.md)。普通输入法安装器不会自动安装这项系统级设置。
