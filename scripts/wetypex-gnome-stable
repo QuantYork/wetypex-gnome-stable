@@ -1,0 +1,28 @@
+#!/usr/bin/python3
+"""User-session launcher: no account access, no text logging."""
+import os
+import pathlib
+import subprocess
+import sys
+
+root = pathlib.Path.home() / '.local/lib/wetypex-gnome-stable'
+env = os.environ.copy()
+backend = root / 'backend-json-compat.py'
+if pathlib.Path('/usr/bin/fcitx5-wetypex-backend').exists() and backend.exists():
+    env['WETYPE_BACKEND_LAUNCHER'] = str(backend)
+actual = subprocess.check_output(['/usr/bin/fcitx5', '--version'], text=True).strip()
+expected = (root / 'fcitx-version').read_text().strip()
+if env.get('WETYPEX_GNOME_TRACE') != '1':
+    env.pop('FCITX_PREKEY_TRACE', None)
+else:
+    env['FCITX_PREKEY_TRACE'] = '1'
+if actual == expected:
+    libraries = [str(root / name) for name in ['libcandidate-anchor.so', 'libprekey-anchor.so']]
+    if not all(pathlib.Path(path).is_file() for path in libraries):
+        raise SystemExit('Stable input-method libraries missing; reinstall or use the recovery script.')
+    if env.get('LD_PRELOAD'):
+        libraries.append(env['LD_PRELOAD'])
+    env['LD_PRELOAD'] = ':'.join(libraries)
+else:
+    print(f'Fcitx changed from {expected} to {actual}; starting without version-pinned position hooks.', file=sys.stderr)
+os.execve('/usr/bin/fcitx5', ['/usr/bin/fcitx5', *sys.argv[1:]], env)
