@@ -120,6 +120,10 @@ WETYPE_BACKEND_LAUNCHER="$HOME/.local/lib/wetypex-gnome-stable/backend-json-comp
 
 升级本项目目前采用“卸载 → 构建新版 → 重新安装”，旧备份保留。Fcitx 升级到其他版本时启动器会跳过两个版本固定的定位库，启动普通 Fcitx + 后端包装，并在服务日志提示；固定起点效果此时不保证，需要重新适配和验证，不能直接删掉版本检查。
 
+## 语音输入排查
+
+如果快捷键触发了录音、识别也成功，但文字没有回到输入框，可参考 [语音回填编码兼容修复](docs/voice-input.md)。这是独立、可选且需要管理员权限的单行修复，普通安装器不会自动执行。
+
 ## 实现与限制
 
 详见 [方案原理](docs/design.md)、[改动与验证](docs/changes.md) 和 [版本记录](CHANGELOG.md)。
