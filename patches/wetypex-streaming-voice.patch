@@ -1,0 +1,328 @@
+--- a/src/plugin/wetype.cpp
++++ b/src/plugin/wetype.cpp
+@@ -285,6 +285,59 @@
+   std::string inbound_, outbound_;
+   bool voiceRecording_ = false, voiceHold_ = false;
+   uint64_t voiceSession_ = 0, voiceEpoch_ = 0;
++  InputContext *voiceContext_ = nullptr;
++  bool voiceStreaming_ = false;
++  InputContext *voicePendingContext_ = nullptr;
++  std::unique_ptr<EventSourceTime> voiceStartTimer_;
++  bool voiceSubmitRequested_ = false, voiceSubmitReleasePending_ = false;
++  InputContext *voiceSubmitContext_ = nullptr;
++  Key voiceSubmitKey_{FcitxKey_Return};
++  std::unique_ptr<EventSourceTime> voiceSubmitTimer_;
++  std::string voiceText_;
++  std::vector<std::unique_ptr<HandlerTableEntry<EventHandler>>> voiceHandlers_;
++  void displayVoice(InputContext *ic) {
++    ic->inputPanel().reset();
++    Text text;
++    if (!voiceText_.empty()) { text.append(voiceText_, TextFormatFlag::DontCommit); text.setCursor(voiceText_.size()); }
++    if (ic->capabilityFlags().test(CapabilityFlag::Preedit) && ic->isPreeditEnabled())
++      ic->inputPanel().setClientPreedit(text);
++    else ic->inputPanel().setPreedit(text);
++    ic->updatePreedit();
++    ic->updateUserInterface(UserInterfaceComponent::InputPanel);
++  }
++  void cancelVoicePending() {
++    voicePendingContext_ = nullptr;
++    if (voiceStartTimer_) voiceStartTimer_->setEnabled(false);
++  }
++  void queueVoice(InputContext *ic) {
++    voicePendingContext_ = ic;
++    voiceStartTimer_->setTime(now(CLOCK_MONOTONIC) + 120000);
++    voiceStartTimer_->setEnabled(true);
++  }
++  void cancelVoiceSubmit() {
++    voiceSubmitContext_ = nullptr;
++    if (voiceSubmitTimer_) voiceSubmitTimer_->setEnabled(false);
++  }
++  void queueVoiceSubmit(InputContext *ic, const Key &key) {
++    voiceSubmitContext_ = ic; voiceSubmitKey_ = key;
++    voiceSubmitTimer_->setTime(now(CLOCK_MONOTONIC) + 100000);
++    voiceSubmitTimer_->setEnabled(true);
++  }
++  void cancelVoice(bool clearDisplay = true) {
++    voiceSubmitRequested_ = false;
++    cancelVoiceSubmit();
++    cancelVoicePending();
++    if (!voiceContext_) return;
++    auto *ic = voiceContext_;
++    voiceStreaming_ = false;
++    voiceText_.clear();
++    if (clearDisplay) { ic->inputPanel().reset(); ic->updatePreedit(); ic->updateUserInterface(UserInterfaceComponent::InputPanel); }
++    voiceRecording_ = false;
++    voiceHold_ = false;
++    voiceContext_ = nullptr;
++    startProcess({WETYPE_VOICE, "cancel", std::to_string(voiceSession_),
++                  std::to_string(voiceEpoch_)});
++  }
+   pid_t syncChild_ = -1;
+   void startSync() {
+     if (syncChild_ > 0 && waitpid(syncChild_, nullptr, WNOHANG) == 0)
+@@ -884,6 +937,9 @@
+     }
+   }
+   void startVoice(InputContext *ic, bool hold) {
++    cancelVoicePending();
++    cancelVoiceSubmit();
++    voiceSubmitRequested_ = false;
+     if (voiceRecording_ || ic->capabilityFlags().test(CapabilityFlag::Password))
+       return;
+     auto *s = state(ic);
+@@ -898,8 +954,13 @@
+     voiceRecording_ = true;
+     voiceHold_ = hold;
+     voiceSession_ = s->id;
+-    voiceEpoch_ = s->epoch;
+-    startProcess({WETYPE_VOICE, "start"});
++    voiceEpoch_ = s->epoch = std::max(s->epoch + 1, now(CLOCK_MONOTONIC));
++    voiceContext_ = ic;
++    voiceStreaming_ = true;
++    voiceText_.clear();
++    displayVoice(ic);
++    startProcess({WETYPE_VOICE, "start", std::to_string(voiceSession_),
++                  std::to_string(voiceEpoch_)});
+   }
+   void stopVoice() {
+     if (!voiceRecording_)
+@@ -917,7 +978,7 @@
+     auto message = wire::parse(bytes);
+     auto version = uint64_t(wire::number(message.get(), "version"));
+     auto text = wire::str(message.get(), "text");
+-    if (!version || version <= lastVoiceVersion_ || text.empty())
++    if (!version || version <= lastVoiceVersion_)
+       return;
+     lastVoiceVersion_ = version;
+     std::error_code error;
+@@ -932,8 +993,21 @@
+         ic->capabilityFlags().test(CapabilityFlag::Password))
+       return;
+     auto *s = ic->propertyFor(&factory_);
+-    if (s->active && s->epoch == epoch)
+-      ic->commitString(text);
++    if (!s->active || s->epoch != epoch || voiceContext_ != ic) return;
++    auto kind = wire::str(message.get(), "kind");
++    if (kind == "partial") {
++      if (!text.empty()) { voiceText_ = text; displayVoice(ic); }
++    } else if (kind == "cancel" || kind == "error") {
++      cancelVoice();
++    } else if (kind.empty() || kind == "final") {
++      const bool submit = voiceSubmitRequested_;
++      const auto submitKey = voiceSubmitKey_;
++      cancelVoice();
++      if (!text.empty()) {
++        ic->commitString(text);
++        if (submit && ic->hasFocus() && s->active) queueVoiceSubmit(ic, submitKey);
++      }
++    }
+   }
+   static void clearVMenu(State *s) {
+     s->vMenu = VMenu::None;
+@@ -1244,6 +1318,7 @@
+     return s;
+   }
+   void panel(InputContext *ic, State *s) {
++    if (voiceStreaming_ && voiceContext_ == ic) { displayVoice(ic); return; }
+     ic->inputPanel().setAuxUp(s->vMenu == VMenu::None ? Text()
+                                                       : Text(s->vMenuTitle));
+     const std::string displayed =
+@@ -1312,7 +1387,7 @@
+     for (auto &[id, ref] : contexts_)
+       if (auto *ic = ref.get()) {
+         auto *s = ic->propertyFor(&factory_);
+-        ++s->epoch;
++        if (voiceContext_ != ic) ++s->epoch;
+         s->seq = s->applied = s->inputSeq = 0;
+         s->selectionPending = false;
+         s->deferredKeys.clear();
+@@ -1671,6 +1746,33 @@
+           return new State(++nextId_, ic);
+         }) {
+     reloadSettings();
++    voiceStartTimer_ = instance_->eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC), 0,
++      [this](auto *, uint64_t) {
++        auto *ic = voicePendingContext_;
++        voicePendingContext_ = nullptr;
++        if (ic && ic->hasFocus() && state(ic)->active) startVoice(ic, true);
++        return false;
++      });
++    voiceStartTimer_->setEnabled(false);
++    voiceSubmitTimer_ = instance_->eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC), 0,
++      [this](auto *, uint64_t) {
++        auto *ic = voiceSubmitContext_;
++        voiceSubmitContext_ = nullptr;
++        if (ic && ic->hasFocus() && state(ic)->active && !voiceContext_ && !voicePendingContext_) {
++          ic->forwardKey(voiceSubmitKey_);
++          ic->forwardKey(voiceSubmitKey_, true);
++        }
++        return false;
++      });
++    voiceSubmitTimer_->setEnabled(false);
++    for (auto type : {EventType::InputContextFocusOut, EventType::InputContextDestroyed})
++      voiceHandlers_.push_back(instance_->watchEvent(type, EventWatcherPhase::PreInputMethod,
++        [this](Event &event) {
++          if (static_cast<InputContextEvent &>(event).inputContext() == voiceContext_ ||
++              static_cast<InputContextEvent &>(event).inputContext() == voicePendingContext_ ||
++              static_cast<InputContextEvent &>(event).inputContext() == voiceSubmitContext_)
++            cancelVoice(event.type() != EventType::InputContextDestroyed);
++        }));
+     instance_->inputContextManager().registerProperty("wetypexState",
+                                                       &factory_);
+     settingsAction_.setShortText("WeTypeX 设置");
+@@ -1703,7 +1805,7 @@
+             if (!start())
+               scheduleRestart();
+           }
+-          if (time >= syncTick_ + 1000000) {
++          if (time >= syncTick_ + 100000) {
+             syncTick_ = time;
+             receiveVoice();
+           }
+@@ -1728,6 +1830,7 @@
+     return &config_;
+   }
+   void setConfig(const RawConfig &raw) override {
++    cancelVoice();
+     config_.load(raw, true);
+     saveNativeConfig();
+     applyAppearance();
+@@ -1749,6 +1852,7 @@
+     setConfig(raw);
+   }
+   void reloadConfig() override {
++    cancelVoice();
+     reloadSettings();
+     if (networkEnabled_)
+       startSync();
+@@ -1762,6 +1866,8 @@
+     }
+   }
+   ~WeType() override {
++    cancelVoice();
++    voiceHandlers_.clear();
+     timer_.reset();
+     stop();
+     stopSync();
+@@ -1786,6 +1892,7 @@
+   }
+   void reset(const InputMethodEntry &, InputContextEvent &e) override {
+     auto *ic = e.inputContext();
++    if (ic == voiceContext_ || ic == voicePendingContext_) cancelVoice();
+     auto *s = state(ic);
+     if (vModeSession_ == s->id)
+       stopVModeWindow(s->active ? "input context reset"
+@@ -1810,6 +1917,7 @@
+   }
+   void deactivate(const InputMethodEntry &entry,
+                   InputContextEvent &e) override {
++    if (e.inputContext() == voiceSubmitContext_) cancelVoiceSubmit();
+     state(e.inputContext())->active = false;
+     reset(entry, e);
+     if (child_ > 0)
+@@ -1880,6 +1988,15 @@
+     auto sym = key.sym();
+     if (!s->active || ic->capabilityFlags().test(CapabilityFlag::Password))
+       return;
++    const bool returnKey = sym == FcitxKey_Return || sym == FcitxKey_KP_Enter;
++    if (e.isRelease() && returnKey && voiceSubmitReleasePending_) {
++      voiceSubmitReleasePending_ = false; e.filterAndAccept(); return;
++    }
++    if (voiceSubmitContext_ == ic && !e.isRelease() && !key.isModifier()) {
++      if (returnKey) { voiceSubmitReleasePending_ = true; e.filterAndAccept(); return; }
++      cancelVoiceSubmit();
++      if (sym == FcitxKey_Escape) { e.filterAndAccept(); return; }
++    }
+     // A later key must not operate on the preedit awaiting a select reply.
+     // Re-enter normal event processing after that reply has committed it.
+     if (s->selectionPending && sym != FcitxKey_Escape) {
+@@ -1892,12 +2009,14 @@
+         sym == FcitxKey_Shift_L || sym == FcitxKey_Shift_R;
+     const bool ctrlModifier =
+         sym == FcitxKey_Control_L || sym == FcitxKey_Control_R;
++    if (voicePendingContext_ && !e.isRelease() && !key.isModifier()) cancelVoicePending();
+     if (e.isRelease()) {
+       auto releasedConfiguredKey = [&](const KeyList &keys) {
+         return std::any_of(keys.begin(), keys.end(), [&](const Key &candidate) {
+           return key.isReleaseOfModifier(candidate);
+         });
+       };
++      if (voicePendingContext_ && releasedConfiguredKey(*config_.voice->holdKey)) cancelVoicePending();
+       if (voiceRecording_ && voiceHold_ &&
+           releasedConfiguredKey(*config_.voice->holdKey)) {
+         stopVoice();
+@@ -1953,10 +2072,25 @@
+     }
+     if (networkEnabled_ && !voiceRecording_ && *config_.voice->holdShortcut &&
+         key.checkKeyList(*config_.voice->holdKey)) {
+-      startVoice(ic, true);
++      queueVoice(ic);
+       e.filterAndAccept();
+       return;
+     }
++    if (voiceContext_ == ic && returnKey) {
++      if (!voiceSubmitRequested_) {
++        voiceSubmitRequested_ = true;
++        // Strip the held recording modifiers while still recording; preserve Shift+Enter.
++        voiceSubmitKey_ = voiceRecording_ ? Key(sym, key.states() & KeyState::Shift) : e.rawKey();
++        startProcess({WETYPE_VOICE, "submit", std::to_string(voiceSession_), std::to_string(voiceEpoch_)});
++      }
++      voiceSubmitReleasePending_ = true;
++      if (voiceRecording_) stopVoice();
++      e.filterAndAccept(); return;
++    }
++    if (voiceContext_ && sym == FcitxKey_Escape) {
++      cancelVoice(); e.filterAndAccept(); return;
++    }
++    if (voiceContext_ && !voiceRecording_ && !key.isModifier()) cancelVoice();
+     if (voiceRecording_ && !key.isModifier()) {
+       stopVoice();
+       e.filterAndAccept();
+--- a/src/backend/macos_host.cpp
++++ b/src/backend/macos_host.cpp
+@@ -2813,7 +2813,7 @@
+   if (!service_mode) {
+     const bool long_operation =
+         !strcmp(argv[2], "llm-service") || !strcmp(argv[2], "flurry-loopback");
+-    alarm(long_operation ? 45 : 15);
++    alarm(getenv("WETYPE_VOICE_STREAM") ? 630 : (long_operation ? 45 : 15));
+   }
+   initialize_rune_locale();
+   setvbuf(stderr, nullptr, _IONBF, 0);
+--- a/src/backend/business_services.hpp
++++ b/src/backend/business_services.hpp
+@@ -397,6 +397,8 @@
+     unlink(temporary.c_str());
+   return ok;
+ }
++
++#include "voice_stream.hpp"
+ 
+ static void business_service() {
+   const char *identity_path = getenv("WETYPE_IDENTITY_FILE");
+@@ -498,7 +500,7 @@
+     operation_subcommand = 36;
+   else if (getenv("WETYPE_SET_FUNCTIONS"))
+     operation_subcommand = 39;
+-  else if (getenv("WETYPE_VOICE_FILE"))
++  else if (getenv("WETYPE_VOICE_FILE") || getenv("WETYPE_VOICE_STREAM"))
+     operation_subcommand = 1000;
+   else if (getenv("WETYPE_P2P_CODE"))
+     operation_subcommand = 1001;
+@@ -586,7 +588,7 @@
+       clock_gettime(CLOCK_REALTIME, &now);
+       protobuf_uint(request, 5,
+                     uint64_t(now.tv_sec) * 1000 + now.tv_nsec / 1000000);
+-    } else if (operation_subcommand == 1000) {
++    } else if (operation_subcommand == 1000 && !getenv("WETYPE_VOICE_STREAM")) {
+       std::ifstream voice(getenv("WETYPE_VOICE_FILE"), std::ios::binary);
+       std::string audio((std::istreambuf_iterator<char>(voice)), {});
+       if (audio.empty() || audio.size() > 8388608)
+@@ -755,6 +757,7 @@
+                 void (*)(void *, int, int, const char *, uint32_t, const char *,
+                          uint32_t, const char *, uint32_t),
+                 const TaskOption *);
++    if (getenv("WETYPE_VOICE_STREAM")) voice_stream_run((StartTask)syms.at("_business_net_start_task_with_option"), &option);
+     if (task_requests.empty())
+       task_requests.push_back(request);
+     if (operation_subcommand == 1000) {

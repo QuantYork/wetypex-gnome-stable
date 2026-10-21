@@ -1,0 +1,8 @@
+{
+  "uuid": "wetypex-voice-status@quantyork.local",
+  "name": "WeTypeX Voice Status",
+  "description": "Show recording and transcription status immediately left of the input method indicator, without covering application content.",
+  "shell-version": ["50"],
+  "version": 1,
+  "url": "https://github.com/QuantYork/wetypex-gnome-stable"
+}

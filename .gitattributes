@@ -1,0 +1,2 @@
+# Unified diff context lines carry a required leading space, including empty lines.
+patches/*.patch -whitespace

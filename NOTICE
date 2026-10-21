@@ -1,0 +1,8 @@
+WeTypeX GNOME Stable adaptation code is licensed under the repository MIT license.
+
+patches/wetypex-streaming-voice.patch contains modifications and context from
+fcitx5-wetypex, Copyright (c) 2026 panxuc, under the MIT license.
+Upstream: https://github.com/panxuc/fcitx5-wetypex
+The upstream license is retained in licenses/fcitx5-wetypex-MIT.txt.
+
+WeChat input engine, runtime resources and account data are not distributed here.

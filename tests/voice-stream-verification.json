@@ -1,0 +1,25 @@
+{
+  "partials_seen": 28,
+  "partial_before_stop": true,
+  "prefix_revisions": 11,
+  "kind": "final",
+  "verified_final": true,
+  "known_synthetic_final_text": "今天天气很好，我们准备去公园散步。明天如果下雨，就在家里看书。请问现在几点了？",
+  "elapsed_seconds": 11.498,
+  "processes_stopped": true,
+  "microphone_used": false,
+  "user_verified": {
+    "streaming_before_stop": true,
+    "finalization": true,
+    "win_c_copy_no_voice_trigger": true,
+    "continuous_bottom_indicator_before_replacement": true,
+    "enter_waits_for_final_then_sends": true
+  },
+  "panel_indicator": {
+    "private_bus_test": "passed",
+    "gjs_presentation_and_syntax": "passed",
+    "installed": true,
+    "live_shell_rendering": "pending first logout/login",
+    "microphone_used_by_automated_tests": false
+  }
+}

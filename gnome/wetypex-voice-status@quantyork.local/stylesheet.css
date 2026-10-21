@@ -1,0 +1,4 @@
+.wetypex-voice-status { spacing: 6px; }
+.wetypex-voice-status.recording { color: #8ff0a4; }
+.wetypex-voice-status.processing { color: #99c1f1; }
+.wetypex-voice-status.error { color: #ffbe6f; }
