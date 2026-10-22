@@ -104,6 +104,7 @@ WantedBy=graphical-session.target
     for name in ['libprekey-anchor.so', 'libcandidate-anchor.so', 'fcitx-version']:
         files[str((prefix / name).relative_to(home))] = ((ROOT / 'build' / name).read_bytes(), 0o644)
     files[str((prefix / 'backend-json-compat.py').relative_to(home))] = ((ROOT / 'scripts/backend-json-compat.py').read_bytes(), 0o755)
+    files[str((prefix / 'session-environment.py').relative_to(home))] = ((ROOT / 'scripts/session-environment.py').read_bytes(), 0o644)
     files[str((prefix / 'uninstall.py').relative_to(home))] = ((ROOT / 'scripts/uninstall.py').read_bytes(), 0o755)
     entries = []
     # Complete the backup plan before replacing the first managed file.

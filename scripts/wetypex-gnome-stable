@@ -6,7 +6,17 @@ import subprocess
 import sys
 
 root = pathlib.Path.home() / '.local/lib/wetypex-gnome-stable'
-env = os.environ.copy()
+# The user manager can start this service before GNOME imports display variables.
+# Load only allowlisted display fields; never import or log the full manager environment.
+import importlib.util
+spec = importlib.util.spec_from_file_location('session_environment', root / 'session-environment.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+try:
+    env = module.prepare(os.environ)
+except RuntimeError as error:
+    print(str(error), file=sys.stderr)
+    raise SystemExit(1)
 backend = root / 'backend-json-compat.py'
 if pathlib.Path('/usr/bin/fcitx5-wetypex-backend').exists() and backend.exists():
     env['WETYPE_BACKEND_LAUNCHER'] = str(backend)
